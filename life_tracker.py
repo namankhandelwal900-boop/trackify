@@ -1,19 +1,56 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime, timedelta
 import os
+from datetime import datetime
 import plotly.express as px
 
-ADMIN_EMAIL = "namankhandelwal900@gmail.com"
+# ---------------- CONFIG ----------------
+st.set_page_config(page_title="Trackify", layout="wide")
 
+ADMIN_EMAIL = "namankhandelwal900@gmail.com"
+DATA_FILE = "life_tracker_data.csv"
+USERS_FILE = "users.csv"
+
+# ---------------- SESSION INIT ----------------
 if "route" not in st.session_state:
-    st.session_state.route = "public"  # public | demo | login | app
+    st.session_state.route = "public"  # public | demo | login | app | admin
+
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+
+if "demo" not in st.session_state:
+    st.session_state.demo = False
+
+# ---------------- DATA ----------------
+def load_data():
+    if os.path.exists(DATA_FILE):
+        return pd.read_csv(DATA_FILE)
+    return pd.DataFrame(columns=["Username", "Date", "Time", "Task", "Productive"])
+
+def save_data(df):
+    if st.session_state.get("demo", False):
+        st.warning("Demo mode: data not saved.")
+        return
+    df.to_csv(DATA_FILE, index=False)
+
+# ---------------- USERS ----------------
+def load_users():
+    if os.path.exists(USERS_FILE):
+        return pd.read_csv(USERS_FILE)
+    return pd.DataFrame(columns=["email", "username", "password", "status"])
+
+def save_users(df):
+    df.to_csv(USERS_FILE, index=False)
+
+def is_gmail(email):
+    return email.lower().endswith("@gmail.com")
+
+# ---------------- LANDING PAGE ----------------
 def landing_page():
     st.markdown("<h1 style='text-align:center;'>Trackify</h1>", unsafe_allow_html=True)
     st.markdown("<h3 style='text-align:center;'>From Chaos to Clarity</h3>", unsafe_allow_html=True)
     st.markdown("<p style='text-align:center;'>Built by <b>Naman Khandelwal</b></p>", unsafe_allow_html=True)
 
-    st.write("")
     c1, c2, c3 = st.columns(3)
 
     with c1:
@@ -34,649 +71,243 @@ def landing_page():
     st.divider()
 
     st.subheader("What is Trackify?")
-    st.write("Trackify is a 24-hour life and productivity tracking system designed to help you build clarity, consistency, and focus.")
+    st.write("Trackify is a 24-hour life and productivity tracking system designed to bring clarity to your day.")
 
     st.subheader("Features")
     st.write("""
     • 24-hour planner  
     • Smart insights  
     • Weekly & monthly analytics  
-    • Habit & streak tracking  
-    • Focus window detection  
-    • Goal tracking  
+    • Productivity tracking  
     • Privacy-first  
     """)
 
-    st.subheader("How it works")
-    st.write("""
-    1. Plan your day  
-    2. Track your actions  
-    3. Get insights  
-    4. Improve daily  
-    """)
+    st.caption("© Trackify — Built by Naman Khandelwal")
 
-    st.divider()
-    st.caption("© Trackify — From Chaos to Clarity | Built by Naman Khandelwal")
+# ---------------- DEMO MODE ----------------
+def demo_mode():
+    st.session_state.demo = True
+    st.session_state.logged_in = True
+    st.session_state.username = "Demo User"
+    st.session_state.email = "demo@trackify.app"
 
+    if "demo_df" not in st.session_state:
+        st.session_state.demo_df = pd.DataFrame(
+            columns=["Username", "Date", "Time", "Task", "Productive"]
+        )
 
-st.set_page_config(page_title="Life Tracker", layout="wide")
+    st.sidebar.info("🧪 Demo Mode")
+    app_shell(st.session_state.demo_df, demo=True)
 
-DATA_FILE = "life_tracker_data.csv"
-USER_FILE = "users.csv"
-GOAL_FILE = "goals.csv"
+# ---------------- LOGIN ----------------
+def login_page():
+    st.title("🔐 Trackify Access")
 
-# -------------------- Utilities --------------------
-
-def safe_read_csv(path, cols):
-    if os.path.exists(path):
-        try:
-            return pd.read_csv(path)
-        except:
-            return pd.DataFrame(columns=cols)
-    return pd.DataFrame(columns=cols)
-
-def load_users():
-    return safe_read_csv(USER_FILE, ["username", "password"])
-
-def save_users(df):
-    df.to_csv(USER_FILE, index=False)
-
-def authenticate(username, password):
     users = load_users()
-    if len(users) == 0:
-        return False
-    return ((users["username"] == username) & (users["password"] == password)).any()
-
-def load_data():
-    return safe_read_csv(DATA_FILE, ["Username", "Date", "Time", "Task", "Productive"])
-
-def save_data(df):
-    if st.session_state.get("demo", False):
-        st.warning("Demo mode: Data is not saved.")
-        return
-    df.to_csv(DATA_FILE, index=False)
-
-def load_goals():
-    return safe_read_csv(GOAL_FILE, ["Username", "Goal", "Type", "Completed", "Date"])
-
-def save_goals(df):
-    df.to_csv(GOAL_FILE, index=False)
-
-# -------------------- Session --------------------
-
-if "logged_in" not in st.session_state:
-    st.session_state.logged_in = False
-
-st.title("💎 Life Tracker — FINAL SYSTEM (PATCHED)")
-
-# -------------------- Login --------------------
-
-if not st.session_state.logged_in:
-    tab1, tab2 = st.tabs(["Login", "Register"])
+    tab1, tab2 = st.tabs(["Login", "Request Access"])
 
     with tab1:
-        u = st.text_input("Username")
-        p = st.text_input("Password", type="password")
+        email = st.text_input("Email", key="login_email")
+        password = st.text_input("Password", type="password", key="login_pass")
+
         if st.button("Login"):
-            if authenticate(u, p):
-                st.session_state.logged_in = True
-                st.session_state.username = u
-                st.rerun()
-            else:
+            match = users[(users["email"] == email) & (users["password"] == password)]
+            if match.empty:
                 st.error("Invalid credentials")
+            else:
+                status = match.iloc[0]["status"]
+                if status == "approved":
+                    st.session_state.logged_in = True
+                    st.session_state.username = match.iloc[0]["username"]
+                    st.session_state.email = email
+                    st.session_state.route = "app"
+                    st.rerun()
+                elif status == "pending":
+                    st.warning("Your request is pending.")
+                else:
+                    st.error("Blocked.")
 
     with tab2:
-        nu = st.text_input("New Username")
-        npw = st.text_input("New Password", type="password")
-        if st.button("Create Account"):
-            users = load_users()
-            if nu in users["username"].values:
-                st.warning("Username exists")
+        email = st.text_input("Email", key="reg_email")
+        username = st.text_input("Username", key="reg_user")
+        password = st.text_input("Password", type="password", key="reg_pass")
+
+        if st.button("Request Access"):
+            if email in users["email"].values:
+                st.warning("Email already exists.")
             else:
-                users = pd.concat(
-                    [users, pd.DataFrame([[nu, npw]], columns=["username","password"])]
-                )
+                status = "approved" if is_gmail(email) else "pending"
+                new = pd.DataFrame([[email, username, password, status]],
+                                   columns=["email", "username", "password", "status"])
+                users = pd.concat([users, new], ignore_index=True)
                 save_users(users)
-                st.success("Account created!")
+                st.success("Request submitted.")
 
-    landing_page()
-    st.stop()
+# ---------------- ADMIN PANEL ----------------
+def admin_panel():
+    st.title("👑 Admin Panel")
+    users = load_users()
 
-# ----------- SECURITY GATE -----------
+    for i, row in users.iterrows():
+        with st.expander(row["email"]):
+            st.write("Username:", row["username"])
+            st.write("Status:", row["status"])
 
-# Public users
-if st.session_state.route == "public":
-    landing_page()
-    st.stop()
+            c1, c2, c3 = st.columns(3)
 
-# Demo users
-if st.session_state.route == "demo":
-    demo_mode()
-    st.stop()
+            if c1.button("Approve", key=f"a{i}"):
+                users.at[i, "status"] = "approved"
+                save_users(users)
+                st.rerun()
 
-# Login / Request Access
-if st.session_state.route == "login":
-    login_page()
-    st.stop()
+            if c2.button("Block", key=f"b{i}"):
+                users.at[i, "status"] = "blocked"
+                save_users(users)
+                st.rerun()
 
-# Admin access protection
-if st.session_state.route == "admin":
-    if st.session_state.get("email") != ADMIN_EMAIL:
-        st.error("Unauthorized access.")
+            if c3.button("Delete", key=f"d{i}"):
+                users = users.drop(i)
+                save_users(users)
+                st.rerun()
+# ---------------- APP SHELL ----------------
+def app_shell(df, demo=False):
+    user = st.session_state.username
+
+    st.sidebar.success(f"Logged in: {user}")
+
+    menu = st.sidebar.radio("Menu", ["Dashboard", "Planner", "Weekly", "Monthly"])
+
+    if st.sidebar.button("Logout"):
+        st.session_state.logged_in = False
+        st.session_state.demo = False
         st.session_state.route = "public"
         st.rerun()
-    else:
+
+    if demo:
+        st.warning("You are in Demo Mode. Data will not be saved.")
+
+    # Filter by user
+    user_df = df[df["Username"] == user]
+
+    # ---------------- DASHBOARD ----------------
+    if menu == "Dashboard":
+        st.title("📊 Dashboard")
+
+        if user_df.empty:
+            st.info("No data yet.")
+        else:
+            prod = user_df["Productive"].value_counts().get("Yes", 0)
+            non_prod = user_df["Productive"].value_counts().get("No", 0)
+
+            c1, c2 = st.columns(2)
+            c1.metric("Productive Tasks", prod)
+            c2.metric("Non-Productive Tasks", non_prod)
+
+            st.subheader("Recent Entries")
+            st.dataframe(user_df.sort_values(by=["Date", "Time"], ascending=False))
+
+    # ---------------- PLANNER ----------------
+    elif menu == "Planner":
+        st.title("🗓️ 24-Hour Planner")
+
+        date = st.date_input("Select Date", datetime.today())
+        time = st.selectbox("Hour", [f"{i:02d}:00" for i in range(24)])
+        task = st.text_input("Task")
+        productive = st.radio("Was it productive?", ["Yes", "No"])
+
+        if st.button("Save Entry"):
+            new_row = {
+                "Username": user,
+                "Date": str(date),
+                "Time": time,
+                "Task": task,
+                "Productive": productive
+            }
+
+            df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+
+            if demo:
+                st.session_state.demo_df = df
+            else:
+                save_data(df)
+
+            st.success("Saved!")
+            st.rerun()
+
+        st.subheader("Your Entries")
+        if user_df.empty:
+            st.info("No entries yet.")
+        else:
+            st.dataframe(user_df.sort_values(by=["Date", "Time"], ascending=False))
+
+    # ---------------- WEEKLY ----------------
+    elif menu == "Weekly":
+        st.title("📅 Weekly Summary")
+
+        if user_df.empty:
+            st.info("No data yet.")
+        else:
+            temp = user_df.copy()
+            temp["Date"] = pd.to_datetime(temp["Date"])
+            temp["Week"] = temp["Date"].dt.to_period("W").astype(str)
+
+            weekly = temp.groupby("Week")["Productive"].value_counts().unstack(fill_value=0)
+
+            st.dataframe(weekly)
+
+            fig = px.bar(weekly, barmode="group", title="Weekly Productivity")
+            st.plotly_chart(fig, use_container_width=True)
+
+    # ---------------- MONTHLY ----------------
+    elif menu == "Monthly":
+        st.title("🗓️ Monthly Summary")
+
+        if user_df.empty:
+            st.info("No data yet.")
+        else:
+            temp = user_df.copy()
+            temp["Date"] = pd.to_datetime(temp["Date"])
+            temp["Month"] = temp["Date"].dt.to_period("M").astype(str)
+
+            monthly = temp.groupby("Month")["Productive"].value_counts().unstack(fill_value=0)
+
+            st.dataframe(monthly)
+
+            fig = px.bar(monthly, barmode="group", title="Monthly Productivity")
+            st.plotly_chart(fig, use_container_width=True)
+
+
+# ---------------- ROUTER ----------------
+def router():
+    r = st.session_state.route
+
+    if r == "public":
+        landing_page()
+        st.stop()
+
+    if r == "demo":
+        demo_mode()
+        st.stop()
+
+    if r == "login":
+        login_page()
+        st.stop()
+
+    if r == "admin":
+        if st.session_state.get("email") != ADMIN_EMAIL:
+            st.session_state.route = "public"
+            st.rerun()
         admin_panel()
         st.stop()
 
-# App protection
-if not st.session_state.get("logged_in", False):
-    st.session_state.route = "login"
-    st.rerun()
-
-# -------------------- Sidebar --------------------
-
-st.sidebar.success(f"Logged in: {st.session_state.username}")
-
-menu = st.sidebar.radio(
-    "Menu",
-    ["Dashboard", "Planner", "Weekly", "Monthly", "Insights", "Goals", "Streaks"]
-)
-
-if st.sidebar.button("Logout"):
-    st.session_state.logged_in = False
-    st.rerun()
-    # Admin access (only for you)
-if st.session_state.get("email") == ADMIN_EMAIL:
-    if st.sidebar.button("👑 Admin Panel"):
-        st.session_state.route = "admin"
+    if not st.session_state.get("logged_in", False):
+        st.session_state.route = "login"
         st.rerun()
 
+    df = load_data()
+    app_shell(df, demo=st.session_state.get("demo", False))
+    st.stop()
 
-# -------------------- Load Data --------------------
 
-df = load_data()
-goals_df = load_goals()
-user_data = df[df["Username"] == st.session_state.username]
-
-# -------------------- Dashboard --------------------
-
-if menu == "Dashboard":
-    st.header("📊 Dashboard")
-
-    if len(user_data) == 0:
-        st.info("No data yet. Start using Planner.")
-    else:
-        user_data["Date"] = pd.to_datetime(user_data["Date"], errors="coerce")
-
-        total = len(user_data)
-        productive = len(user_data[user_data["Productive"] == "Yes"])
-        score = int((productive / total) * 100) if total > 0 else 0
-
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Total Hours", total)
-        c2.metric("Productive", productive)
-        c3.metric("Score", f"{score}%")
-
-        prod_counts = user_data["Productive"].value_counts().reset_index()
-        prod_counts.columns = ["Type", "Hours"]
-
-        fig = px.pie(prod_counts, names="Type", values="Hours", hole=0.4)
-        st.plotly_chart(fig, use_container_width=True)
-
-# -------------------- Planner --------------------
-
-# -------------------- 24-Hour Planner (NEW CORE) --------------------
-
-def hour_to_label(h):
-    # Converts 0–23 → 12 AM, 1 AM, ..., 11 PM
-    if h == 0:
-        return "12 AM"
-    elif h < 12:
-        return f"{h} AM"
-    elif h == 12:
-        return "12 PM"
-    else:
-        return f"{h-12} PM"
-
-def hour_range_label(h):
-    return f"{hour_to_label(h)} – {hour_to_label((h+1) % 24)}"
-
-def get_section(h):
-    if 0 <= h <= 5:
-        return "🌙 Night"
-    elif 6 <= h <= 11:
-        return "🌅 Morning"
-    elif 12 <= h <= 17:
-        return "🌞 Afternoon"
-    else:
-        return "🌙 Evening"
-
-SECTION_COLORS = {
-    "🌙 Night": "#1f2a44",
-    "🌅 Morning": "#f5c542",
-    "🌞 Afternoon": "#4aa3df",
-    "🌙 Evening": "#7b4ae2"
-}
-
-if menu == "Planner":
-    st.header("🕒 24-Hour Planner")
-
-    selected_date = st.date_input("Select Date", datetime.today())
-    now_hour = datetime.now().hour
-
-    hours = list(range(24))
-    planner_rows = []
-
-    # Group hours into sections
-    sections = {
-        "🌙 Night": [0,1,2,3,4,5],
-        "🌅 Morning": [6,7,8,9,10,11],
-        "🌞 Afternoon": [12,13,14,15,16,17],
-        "🌙 Evening": [18,19,20,21,22,23]
-    }
-
-    for section, hrs in sections.items():
-        with st.expander(section, expanded=True):
-            st.markdown(
-                f"<div style='padding:8px; border-radius:6px; background-color:{SECTION_COLORS[section]}; color:white; font-weight:bold;'>"
-                f"{section}</div>",
-                unsafe_allow_html=True
-            )
-
-            for h in hrs:
-                label = hour_range_label(h)
-
-                is_current = (h == now_hour)
-                bg = "#e8f0ff" if is_current else "transparent"
-
-                c1, c2, c3 = st.columns([2, 6, 2])
-                with c1:
-                    st.markdown(
-                        f"<div style='padding:6px; background:{bg}; border-radius:4px;'>⏰ {label}</div>",
-                        unsafe_allow_html=True
-                    )
-                with c2:
-                    task = st.text_input(f"Task {h}", key=f"task_{selected_date}_{h}")
-                with c3:
-                    prod = st.selectbox("Productive?", ["Yes", "No"], key=f"prod_{selected_date}_{h}")
-
-                planner_rows.append([
-                    st.session_state.username,
-                    selected_date,
-                    h,                  # INTERNAL hour (0–23)
-                    label,              # DISPLAY label
-                    task,
-                    prod
-                ])
-
-    if st.button("💾 Save Day"):
-        new_df = pd.DataFrame(
-            planner_rows,
-            columns=["Username", "Date", "Hour", "TimeLabel", "Task", "Productive"]
-        )
-
-        # Backward compatibility: keep old "Time" column if needed
-        new_df["Time"] = new_df["TimeLabel"]
-
-        df = pd.concat([df, new_df], ignore_index=True)
-        save_data(df)
-        st.success("Day saved successfully!")
-
-    st.subheader("Your Past Entries")
-    if len(user_data) == 0:
-        st.info("No past data yet.")
-    else:
-        st.dataframe(user_data.tail(200))
-
-# -------------------- Weekly (24-Hour Aware) --------------------
-
-if menu == "Weekly":
-    st.header("📅 Weekly Report (24-Hour Aware)")
-
-    if len(user_data) == 0:
-        st.info("No data available.")
-    else:
-        user_data["Date"] = pd.to_datetime(user_data["Date"], errors="coerce")
-        user_data["Week"] = user_data["Date"].dt.isocalendar().week
-        user_data["Year"] = user_data["Date"].dt.year
-
-        weeks = user_data[["Week", "Year"]].drop_duplicates().sort_values(
-            ["Year", "Week"], ascending=False
-        )
-
-        if len(weeks) == 0:
-            st.info("No valid weeks found.")
-        else:
-            row = weeks.iloc[0]
-            w, y = int(row["Week"]), int(row["Year"])
-
-            week_data = user_data[(user_data["Week"] == w) & (user_data["Year"] == y)]
-
-            total = len(week_data)
-            productive = len(week_data[week_data["Productive"] == "Yes"])
-            score = int((productive / total) * 100) if total > 0 else 0
-
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Total Hours", total)
-            c2.metric("Productive", productive)
-            c3.metric("Score", f"{score}%")
-
-            daily = (
-                week_data
-                .groupby(week_data["Date"].dt.day_name())
-                .size()
-                .reset_index(name="Hours")
-            )
-
-            st.subheader("Day-wise Activity")
-            st.plotly_chart(
-    px.bar(daily, x="Date", y="Hours", text="Hours"),
-    use_container_width=True,
-    key="weekly_daywise_chart"
-)
-
-
-            # 24-hour distribution
-            if "Hour" in week_data.columns:
-                hour_dist = (
-                    week_data
-                    .groupby("Hour")
-                    .size()
-                    .reset_index(name="Entries")
-                )
-                st.subheader("24-Hour Distribution")
-                st.plotly_chart(
-    px.bar(hour_dist, x="Hour", y="Entries"),
-    use_container_width=True,
-    key="weekly_hour_dist_chart"
-)
-
-
-# -------------------- Monthly (24-Hour Aware) --------------------
-
-if menu == "Monthly":
-    st.header("🗓 Monthly Report (24-Hour Aware)")
-
-    if len(user_data) == 0:
-        st.info("No data available.")
-    else:
-        user_data["Date"] = pd.to_datetime(user_data["Date"], errors="coerce")
-        user_data["Month"] = user_data["Date"].dt.month
-        user_data["Year"] = user_data["Date"].dt.year
-        user_data["Day"] = user_data["Date"].dt.day
-
-        months = user_data[["Month", "Year"]].drop_duplicates().sort_values(
-            ["Year", "Month"], ascending=False
-        )
-
-        if len(months) == 0:
-            st.info("No valid months found.")
-        else:
-            row = months.iloc[0]
-            m, y = int(row["Month"]), int(row["Year"])
-
-            month_data = user_data[
-                (user_data["Month"] == m) & (user_data["Year"] == y)
-            ]
-
-            total = len(month_data)
-            productive = len(month_data[month_data["Productive"] == "Yes"])
-            score = int((productive / total) * 100) if total > 0 else 0
-
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Total Hours", total)
-            c2.metric("Productive", productive)
-            c3.metric("Score", f"{score}%")
-
-            daily = (
-                month_data
-                .groupby("Day")
-                .size()
-                .reset_index(name="Hours")
-            )
-
-            st.subheader("Day-wise Activity")
-            st.plotly_chart(
-    px.bar(daily, x="Day", y="Hours", text="Hours"),
-    use_container_width=True,
-    key="monthly_daywise_chart"
-)
-
-
-            # 24-hour distribution
-            if "Hour" in month_data.columns:
-                hour_dist = (
-                    month_data
-                    .groupby("Hour")
-                    .size()
-                    .reset_index(name="Entries")
-                )
-                st.subheader("24-Hour Distribution")
-                st.plotly_chart(
-    px.bar(hour_dist, x="Hour", y="Entries"),
-    use_container_width=True,
-    key="monthly_hour_dist_chart"
-)
-
-
-# -------------------- Monthly --------------------
-
-if menu == "Monthly":
-    st.header("🗓 Monthly Report")
-
-    if len(user_data) == 0:
-        st.info("No data available.")
-    else:
-        user_data["Date"] = pd.to_datetime(user_data["Date"], errors="coerce")
-        user_data["Month"] = user_data["Date"].dt.month
-        user_data["Year"] = user_data["Date"].dt.year
-        user_data["Day"] = user_data["Date"].dt.day
-
-        months = user_data[["Month", "Year"]].drop_duplicates().sort_values(
-            ["Year", "Month"], ascending=False
-        )
-
-        if len(months) == 0:
-            st.info("No valid months found.")
-        else:
-            row = months.iloc[0]
-            m, y = int(row["Month"]), int(row["Year"])
-
-            month_data = user_data[
-                (user_data["Month"] == m) & (user_data["Year"] == y)
-            ]
-
-            total = len(month_data)
-            productive = len(month_data[month_data["Productive"] == "Yes"])
-            score = int((productive / total) * 100) if total > 0 else 0
-
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Total Hours", total)
-            c2.metric("Productive", productive)
-            c3.metric("Score", f"{score}%")
-
-            # FIXED GROUPING
-            daily = (
-                month_data
-                .groupby("Day")
-                .size()
-                .reset_index(name="Hours")
-            )
-
-            st.subheader("Day-wise Activity")
-            st.plotly_chart(
-                px.bar(daily, x="Day", y="Hours", text="Hours"),
-                use_container_width=True
-            )
-# -------------------- Insights --------------------
-
-# -------------------- Insights (24-Hour Aware) --------------------
-
-def hour_to_ampm(h):
-    if h == 0:
-        return "12 AM"
-    elif h < 12:
-        return f"{h} AM"
-    elif h == 12:
-        return "12 PM"
-    else:
-        return f"{h-12} PM"
-
-def hour_bucket(h):
-    if 0 <= h <= 5:
-        return "Night"
-    elif 6 <= h <= 11:
-        return "Morning"
-    elif 12 <= h <= 17:
-        return "Afternoon"
-    else:
-        return "Evening"
-
-if menu == "Insights":
-    st.header("🧠 Productivity Intelligence (24-Hour Core)")
-
-    if len(user_data) == 0:
-        st.info("No data available yet.")
-    else:
-        # Use Hour column if available, else fallback to Time parsing
-        if "Hour" not in user_data.columns:
-            def extract_hour(t):
-                try:
-                    return int(str(t).split(":")[0])
-                except:
-                    return None
-            user_data["Hour"] = user_data["Time"].apply(extract_hour)
-
-        hour_data = user_data.dropna(subset=["Hour"])
-
-        if len(hour_data) == 0:
-            st.info("No valid time data found.")
-        else:
-            # Productivity by hour
-            summary = hour_data.groupby("Hour").agg(
-                total=("Productive", "count"),
-                productive=("Productive", lambda x: (x == "Yes").sum())
-            ).reset_index()
-
-            summary["Score"] = (summary["productive"] / summary["total"]) * 100
-            summary["Label"] = summary["Hour"].apply(lambda x: hour_to_ampm(int(x)))
-            summary["Bucket"] = summary["Hour"].apply(lambda x: hour_bucket(int(x)))
-
-            # Best & worst hours
-            best_row = summary.sort_values("Score", ascending=False).iloc[0]
-            worst_row = summary.sort_values("Score", ascending=True).iloc[0]
-
-            st.success(f"🔥 Best focus hour: {hour_to_ampm(int(best_row['Hour']))}")
-            st.warning(f"⚠️ Worst focus hour: {hour_to_ampm(int(worst_row['Hour']))}")
-
-            # Focus window detection (top 3)
-            top_hours = summary.sort_values("Score", ascending=False).head(3)
-            focus_window = ", ".join(top_hours["Label"].tolist())
-            st.info(f"🎯 Your peak focus window: {focus_window}")
-
-            # Bucket analysis
-            bucket_summary = summary.groupby("Bucket").agg(
-                avg_score=("Score", "mean"),
-                total_hours=("total", "sum")
-            ).reset_index()
-
-            st.subheader("Time of Day Performance")
-            st.plotly_chart(
-                px.bar(
-                    bucket_summary,
-                    x="Bucket",
-                    y="avg_score",
-                    text=bucket_summary["avg_score"].round(1),
-                    labels={"avg_score": "Average Productivity (%)"}
-                ),
-                use_container_width=True
-            )
-
-            # Hour-wise productivity chart
-            st.subheader("Hour-wise Productivity")
-            st.plotly_chart(
-                px.bar(
-                    summary,
-                    x="Label",
-                    y="Score",
-                    text=summary["Score"].round(1),
-                    labels={"Score": "Productivity (%)"}
-                ),
-                use_container_width=True
-            )
-
-            # Smart textual insights
-            best_bucket = bucket_summary.sort_values("avg_score", ascending=False).iloc[0]["Bucket"]
-            worst_bucket = bucket_summary.sort_values("avg_score", ascending=True).iloc[0]["Bucket"]
-
-            st.markdown("### 🧠 Smart Insights")
-            st.write(f"• You perform best during the **{best_bucket}**.")
-            st.write(f"• Your lowest energy period is **{worst_bucket}**.")
-            st.write(f"• Your top focus hours are: **{focus_window}**.")
-            st.write("• Schedule deep work during your peak focus window for best results.")
-
-# -------------------- Goals --------------------
-
-if menu == "Goals":
-    st.header("🎯 Goals")
-
-    goal_text = st.text_input("Enter your goal")
-    goal_type = st.selectbox("Goal Type", ["Daily", "Weekly", "Monthly"])
-
-    if st.button("Add Goal"):
-        if goal_text.strip() == "":
-            st.warning("Goal cannot be empty.")
-        else:
-            new_goal = pd.DataFrame(
-                [[st.session_state.username, goal_text, goal_type, "No", datetime.today()]],
-                columns=["Username", "Goal", "Type", "Completed", "Date"]
-            )
-            goals_df = pd.concat([goals_df, new_goal], ignore_index=True)
-            save_goals(goals_df)
-            st.success("Goal added!")
-
-    user_goals = goals_df[goals_df["Username"] == st.session_state.username]
-
-    if len(user_goals) == 0:
-        st.info("No goals yet.")
-    else:
-        for i, row in user_goals.iterrows():
-            c1, c2 = st.columns([5, 2])
-            with c1:
-                st.write(f"🎯 {row['Goal']} ({row['Type']})")
-            with c2:
-                if row["Completed"] == "No":
-                    if st.button("Mark Done", key=f"goal_{i}"):
-                        goals_df.loc[i, "Completed"] = "Yes"
-                        save_goals(goals_df)
-                        st.rerun()
-                else:
-                    st.success("Completed")
-
-# -------------------- Streaks --------------------
-
-if menu == "Streaks":
-    st.header("🔥 Streaks")
-
-    if len(user_data) == 0:
-        st.info("No activity yet.")
-    else:
-        user_data["Date"] = pd.to_datetime(user_data["Date"], errors="coerce")
-        days = sorted(user_data["Date"].dt.date.dropna().unique())
-
-        if len(days) == 0:
-            st.info("No valid dates.")
-        else:
-            streak = 1
-            max_streak = 1
-
-            for i in range(1, len(days)):
-                if days[i] == days[i-1] + timedelta(days=1):
-                    streak += 1
-                    max_streak = max(max_streak, streak)
-                else:
-                    streak = 1
-
-            st.metric("Current Streak", streak)
-            st.metric("Longest Streak", max_streak)
+# ---------------- RUN ----------------
+router()

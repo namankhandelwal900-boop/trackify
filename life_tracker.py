@@ -4,6 +4,61 @@ from datetime import datetime, timedelta
 import os
 import plotly.express as px
 
+ADMIN_EMAIL = "namankhandelwal900@gmail.com"
+
+if "route" not in st.session_state:
+    st.session_state.route = "public"  # public | demo | login | app
+def landing_page():
+    st.markdown("<h1 style='text-align:center;'>Trackify</h1>", unsafe_allow_html=True)
+    st.markdown("<h3 style='text-align:center;'>From Chaos to Clarity</h3>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align:center;'>Built by <b>Naman Khandelwal</b></p>", unsafe_allow_html=True)
+
+    st.write("")
+    c1, c2, c3 = st.columns(3)
+
+    with c1:
+        if st.button("🚀 Try Demo"):
+            st.session_state.route = "demo"
+            st.rerun()
+
+    with c2:
+        if st.button("🔐 Request Access"):
+            st.session_state.route = "login"
+            st.rerun()
+
+    with c3:
+        if st.button("🔑 Login"):
+            st.session_state.route = "login"
+            st.rerun()
+
+    st.divider()
+
+    st.subheader("What is Trackify?")
+    st.write("Trackify is a 24-hour life and productivity tracking system designed to help you build clarity, consistency, and focus.")
+
+    st.subheader("Features")
+    st.write("""
+    • 24-hour planner  
+    • Smart insights  
+    • Weekly & monthly analytics  
+    • Habit & streak tracking  
+    • Focus window detection  
+    • Goal tracking  
+    • Privacy-first  
+    """)
+
+    st.subheader("How it works")
+    st.write("""
+    1. Plan your day  
+    2. Track your actions  
+    3. Get insights  
+    4. Improve daily  
+    """)
+
+    st.divider()
+    st.caption("© Trackify — From Chaos to Clarity | Built by Naman Khandelwal")
+
+
 st.set_page_config(page_title="Life Tracker", layout="wide")
 
 DATA_FILE = "life_tracker_data.csv"
@@ -36,6 +91,9 @@ def load_data():
     return safe_read_csv(DATA_FILE, ["Username", "Date", "Time", "Task", "Productive"])
 
 def save_data(df):
+    if st.session_state.get("demo", False):
+        st.warning("Demo mode: Data is not saved.")
+        return
     df.to_csv(DATA_FILE, index=False)
 
 def load_goals():
@@ -81,7 +139,40 @@ if not st.session_state.logged_in:
                 save_users(users)
                 st.success("Account created!")
 
+    landing_page()
     st.stop()
+
+# ----------- SECURITY GATE -----------
+
+# Public users
+if st.session_state.route == "public":
+    landing_page()
+    st.stop()
+
+# Demo users
+if st.session_state.route == "demo":
+    demo_mode()
+    st.stop()
+
+# Login / Request Access
+if st.session_state.route == "login":
+    login_page()
+    st.stop()
+
+# Admin access protection
+if st.session_state.route == "admin":
+    if st.session_state.get("email") != ADMIN_EMAIL:
+        st.error("Unauthorized access.")
+        st.session_state.route = "public"
+        st.rerun()
+    else:
+        admin_panel()
+        st.stop()
+
+# App protection
+if not st.session_state.get("logged_in", False):
+    st.session_state.route = "login"
+    st.rerun()
 
 # -------------------- Sidebar --------------------
 
@@ -95,6 +186,12 @@ menu = st.sidebar.radio(
 if st.sidebar.button("Logout"):
     st.session_state.logged_in = False
     st.rerun()
+    # Admin access (only for you)
+if st.session_state.get("email") == ADMIN_EMAIL:
+    if st.sidebar.button("👑 Admin Panel"):
+        st.session_state.route = "admin"
+        st.rerun()
+
 
 # -------------------- Load Data --------------------
 

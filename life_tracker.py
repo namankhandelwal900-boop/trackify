@@ -170,27 +170,31 @@ def login_page():
         username = st.text_input("Username", key="reg_user")
         password = st.text_input("Password", type="password", key="reg_pass")
 
-        if st.button("Request Access"):
-            if email in users["email"].values:
-                st.warning("Email already registered.")
-            else:
-                status = "approved" if is_gmail(email) else "pending"
+if st.button("Request Access"):
+    clean_email = email.strip().lower()
+    existing_emails = users["email"].dropna().str.strip().str.lower().values
 
-                new = pd.DataFrame(
-                    [[email, username, password, status, "no", "no"]],
-                    columns=["email", "username", "password", "status", "reset_requested", "force_change"]
-                )
+    if clean_email in existing_emails:
+        st.warning("Email already registered.")
+    else:
+        status = "approved" if is_gmail(clean_email) else "pending"
 
-                users = pd.concat([users, new], ignore_index=True)
-                save_users(users)
+        new = pd.DataFrame(
+            [[clean_email, username, password, status, "no", "no"]],
+            columns=["email", "username", "password", "status", "reset_requested", "force_change"]
+        )
 
-                if status == "approved":
-                    st.success("Approved instantly! You can now login.")
-                else:
-                    st.info("Request submitted. Await approval.")
+        users = pd.concat([users, new], ignore_index=True)
+        save_users(users)
 
-                st.session_state.route = "login"
-                st.rerun()
+        if status == "approved":
+            st.success("Approved instantly! You can now login.")
+        else:
+            st.info("Request submitted. Await approval.")
+
+        st.session_state.route = "login"
+        st.rerun()
+
 
 
 # ---------------- FORGOT PASSWORD PAGE ----------------

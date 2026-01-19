@@ -172,7 +172,8 @@ def login_page():
 
 if st.button("Request Access"):
     clean_email = email.strip().lower()
-    existing_emails = users["email"].dropna().str.strip().str.lower().values
+
+    existing_emails = users["email"].dropna().astype(str).str.strip().str.lower().values
 
     if clean_email in existing_emails:
         st.warning("Email already registered.")
@@ -205,7 +206,9 @@ def forgot_password_page():
     email = st.text_input("Enter your registered email")
 
     if st.button("Request Reset"):
-        if email not in users["email"].values:
+        existing_emails = users["email"].dropna().astype(str).str.strip().str.lower().values
+       if email.strip().lower() in existing_emails:
+
             st.error("Email not found.")
         else:
             users.loc[users["email"] == email, "reset_requested"] = "yes"

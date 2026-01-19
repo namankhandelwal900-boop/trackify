@@ -1,0 +1,285 @@
+import streamlit as st
+import pandas as pd
+import os
+from datetime import datetime, timedelta
+import plotly.express as px
+
+# ---------------- CONFIG ----------------
+st.set_page_config(page_title="Trackify", layout="wide")
+
+DATA_FILE = "life_tracker_data.csv"
+USERS_FILE = "users.csv"
+ADMIN_EMAIL = "namankhandelwal900@gmail.com"
+
+# ---------------- DATA HELPERS ----------------
+def load_data():
+    if os.path.exists(DATA_FILE):
+        return pd.read_csv(DATA_FILE)
+    return pd.DataFrame(columns=["Username", "Date", "Time", "Task", "Productive"])
+
+def save_data(df):
+    if st.session_state.get("demo", False):
+        return
+    df.to_csv(DATA_FILE, index=False)
+
+# ---------------- USER HELPERS ----------------
+def load_users():
+    if os.path.exists(USERS_FILE):
+        df = pd.read_csv(USERS_FILE)
+
+        # Auto-fix schema
+        for col, default in {
+            "reset_requested": "no",
+            "force_change": "no"
+        }.items():
+            if col not in df.columns:
+                df[col] = default
+
+        # Normalize emails
+        df["email"] = df["email"].astype(str).str.strip().str.lower()
+        return df
+
+    return pd.DataFrame(columns=[
+        "email",
+        "username",
+        "password",
+        "status",
+        "reset_requested",
+        "force_change"
+    ])
+
+def save_users(df):
+    df.to_csv(USERS_FILE, index=False)
+
+def is_gmail(email):
+    return email.lower().endswith("@gmail.com")
+
+# ---------------- SESSION INIT ----------------
+defaults = {
+    "route": "public",
+    "logged_in": False,
+    "demo": False,
+    "username": "",
+    "email": ""
+}
+
+for k, v in defaults.items():
+    if k not in st.session_state:
+        st.session_state[k] = v
+
+# ---------------- LANDING PAGE ----------------
+def landing_page():
+    st.markdown("<h1 style='text-align:center;'>Trackify</h1>", unsafe_allowhtml=True)
+    st.markdown("<h3 style='text-align:center;'>From Chaos to Clarity</h3>", unsafe_allowhtml=True)
+    st.markdown("<p style='text-align:center;'>Built by <b>Naman Khandelwal</b></p>", unsafe_allowhtml=True)
+
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        if st.button("🚀 Try Demo"):
+            st.session_state.route = "demo"
+            st.rerun()
+    with c2:
+        if st.button("🔐 Request Access"):
+            st.session_state.route = "login"
+            st.rerun()
+    with c3:
+        if st.button("🔑 Login"):
+            st.session_state.route = "login"
+            st.rerun()
+
+# ---------------- LOGIN PAGE ----------------
+def login_page():
+    st.title("🔐 Trackify Access")
+    users = load_users()
+
+    tab1, tab2 = st.tabs(["Login", "Request Access"])
+
+    # ---- LOGIN ----
+    with tab1:
+        email = st.text_input("Email")
+        password = st.text_input("Password", type="password")
+
+        if st.button("Login"):
+            email = email.strip().lower()
+            match = users[(users["email"] == email) & (users["password"] == password)]
+
+            if match.empty:
+                st.error("Invalid credentials")
+                return
+
+            status = match.iloc[0]["status"]
+
+            if status != "approved":
+                st.warning(f"Account is {status}")
+                return
+
+            st.session_state.logged_in = True
+            st.session_state.username = match.iloc[0]["username"]
+            st.session_state.email = email
+
+            if match.iloc[0]["force_change"] == "yes":
+                st.session_state.route = "force_change"
+            else:
+                st.session_state.route = "app"
+
+            st.rerun()
+
+        if st.button("Forgot Password?"):
+            st.session_state.route = "forgot_password"
+            st.rerun()
+
+    # ---- REQUEST ACCESS ----
+    with tab2:
+        email = st.text_input("Email", key="reg_email")
+        username = st.text_input("Username", key="reg_user")
+        password = st.text_input("Password", type="password", key="reg_pass")
+
+        if st.button("Request Access"):
+            email = email.strip().lower()
+            existing_emails = users["email"].tolist()
+
+            if not email or not username or not password:
+                st.error("All fields are required.")
+                return
+
+            if email in existing_emails:
+                st.warning("Email already registered.")
+                return
+
+            status = "approved" if is_gmail(email) else "pending"
+
+            new = pd.DataFrame([[
+                email, username, password, status, "no", "no"
+            ]], columns=users.columns)
+
+            users = pd.concat([users, new], ignore_index=True)
+            save_users(users)
+
+            st.success("Request submitted!")
+            st.session_state.route = "login"
+            st.rerun()
+
+# ---------------- FORGOT PASSWORD ----------------
+def forgot_password_page():
+    st.title("🔑 Forgot Password")
+    users = load_users()
+
+    email = st.text_input("Registered Email").strip().lower()
+
+    if st.button("Request Reset"):
+        if email not in users["email"].values:
+            st.error("Email not found.")
+            return
+
+        users.loc[users["email"] == email, "reset_requested"] = "yes"
+        save_users(users)
+        st.success("Reset request sent.")
+        st.session_state.route = "login"
+        st.rerun()
+
+# ---------------- FORCE PASSWORD CHANGE ----------------
+def force_change_password_page():
+    st.title("🔒 Change Password")
+    users = load_users()
+    email = st.session_state.email
+
+    new_pass = st.text_input("New Password", type="password")
+    confirm = st.text_input("Confirm Password", type="password")
+
+    if st.button("Update Password"):
+        if new_pass != confirm:
+            st.error("Passwords do not match.")
+            return
+
+        users.loc[users["email"] == email, ["password", "force_change", "reset_requested"]] = [
+            new_pass, "no", "no"
+        ]
+        save_users(users)
+        st.success(help="Password updated!")
+        st.session_state.route = "app"
+        st.rerun()
+
+# ---------------- DEMO ----------------
+def demo_mode():
+    st.session_state.demo = True
+    st.session_state.logged_in = True
+    st.session_state.username = "Demo User"
+    st.session_state.email = "demo@trackify.app"
+
+    df = pd.DataFrame(columns=["Username", "Date", "Time", "Task", "Productive"])
+    app_shell(df, demo=True)
+
+# ---------------- ADMIN PANEL ----------------
+def admin_panel():
+    st.title("👑 Admin Panel")
+    users = load_users()
+
+    for i, row in users.iterrows():
+        with st.expander(row["email"]):
+            st.write(row)
+
+            if st.button("Approve", key=f"a{i}"):
+                users.at[i, "status"] = "approved"
+            if st.button("Block", key=f"b{i}"):
+                users.at[i, "status"] = "blocked"
+            if st.button("Force Reset", key=f"r{i}"):
+                users.at[i, "force_change"] = "yes"
+
+            save_users(users)
+            st.rerun()
+
+# ---------------- APP SHELL ----------------
+def app_shell(df, demo=False):
+    st.sidebar.success(f"Logged in: {st.session_state.username}")
+
+    if st.sidebar.button("Logout"):
+        st.session_state.clear()
+        st.rerun()
+
+    if st.session_state.email == ADMIN_EMAIL:
+        if st.sidebar.button("👑 Admin"):
+            st.session_state.route = "admin"
+            st.rerun()
+
+    menu = st.sidebar.radio("Menu", ["Dashboard", "Planner"])
+
+    if menu == "Dashboard":
+        st.title("Dashboard")
+
+    if menu == "Planner":
+        task = st.text_input("Task")
+        if st.button("Add"):
+            df.loc[len(df)] = [
+                st.session_state.username,
+                datetime.now().date(),
+                datetime.now().strftime("%H:%M"),
+                task,
+                "Yes"
+            ]
+            save_data(df)
+            st.rerun()
+
+# ---------------- ROUTER ----------------
+def router():
+    r = st.session_state.route
+
+    if r == "public":
+        landing_page()
+    elif r == "demo":
+        demo_mode()
+    elif r == "login":
+        login_page()
+    elif r == "forgot_password":
+        forgot_password_page()
+    elif r == "force_change":
+        force_change_password_page()
+    elif r == "admin":
+        admin_panel()
+    else:
+        if not st.session_state.logged_in:
+            st.session_state.route = "login"
+            st.rerun()
+        df = load_data()
+        app_shell(df)
+
+router()

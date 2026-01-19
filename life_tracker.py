@@ -19,43 +19,50 @@ def load_data():
 
 def save_data(df):
     if st.session_state.get("demo", False):
-        st.warning("Demo mode: data not saved.")
         return
     df.to_csv(DATA_FILE, index=False)
 
-# ---------------- USER HELPERS (AUTO-FIX CSV) ----------------
+# ---------------- USER CSV CLEAN + LOAD ----------------
+def clean_users_df(df):
+    df = df.copy()
+
+    # Required columns
+    required_cols = ["email", "username", "password", "status", "reset_requested", "force_change"]
+    for col in required_cols:
+        if col not in df.columns:
+            df[col] = "no" if col in ["reset_requested", "force_change"] else ""
+
+    # Normalize email
+    df["email"] = df["email"].astype(str).str.strip().str.lower()
+
+    # Remove empty email rows
+    df = df[df["email"] != ""]
+    df = df.drop_duplicates(subset=["email"], keep="first")
+
+    return df
+
 def load_users():
     if os.path.exists(USERS_FILE):
-        df = pd.read_csv(USERS_FILE)
+        try:
+            df = pd.read_csv(USERS_FILE)
+        except:
+            df = pd.DataFrame(columns=["email", "username", "password", "status", "reset_requested", "force_change"])
+    else:
+        df = pd.DataFrame(columns=["email", "username", "password", "status", "reset_requested", "force_change"])
 
-        # auto-upgrade schema
-        if "reset_requested" not in df.columns:
-            df["reset_requested"] = "no"
-        if "force_change" not in df.columns:
-            df["force_change"] = "no"
-
-        # normalize emails
-        df["email"] = df["email"].astype(str).str.strip().str.lower()
-        return df
-
-    return pd.DataFrame(columns=[
-        "email",
-        "username",
-        "password",
-        "status",
-        "reset_requested",
-        "force_change"
-    ])
+    df = clean_users_df(df)
+    save_users(df)
+    return df
 
 def save_users(df):
     df.to_csv(USERS_FILE, index=False)
 
 def is_gmail(email):
-    return email.lower().endswith("@gmail.com")
+    return email.endswith("@gmail.com")
 
 # ---------------- SESSION INIT ----------------
 if "route" not in st.session_state:
-    st.session_state.route = "public"  # public | demo | login | app | admin | forgot_password | force_change
+    st.session_state.route = "public"
 
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
@@ -94,31 +101,7 @@ def landing_page():
             st.rerun()
 
     st.divider()
-
-    st.subheader("What is Trackify?")
-    st.write("Trackify is a 24-hour life and productivity tracking system designed to help you build clarity, consistency, and focus.")
-
-    st.subheader("Features")
-    st.write("""
-    • 24-hour planner  
-    • Smart insights  
-    • Weekly & monthly analytics  
-    • Habit & streak tracking  
-    • Focus windows  
-    • Goal tracking  
-    • Privacy-first  
-    """)
-
-    st.subheader("How it works")
-    st.write("""
-    1. Plan your day  
-    2. Track your actions  
-    3. Get insights  
-    4. Improve daily  
-    """)
-
-    st.divider()
-    st.caption("© Trackify — From Chaos to Clarity | Built by Naman Khandelwal")
+    st.write("A 24-hour productivity & life tracking system.")
 
 # ---------------- LOGIN PAGE ----------------
 def login_page():
@@ -127,9 +110,8 @@ def login_page():
     tab1, tab2 = st.tabs(["Login", "Request Access"])
     users = load_users()
 
+    # ---------- LOGIN ----------
     with tab1:
-        st.subheader("Login")
-
         email = st.text_input("Email", key="login_email").strip().lower()
         password = st.text_input("Password", type="password", key="login_pass")
 
@@ -152,37 +134,34 @@ def login_page():
                         st.session_state.route = "app"
 
                     st.rerun()
-
                 elif status == "pending":
                     st.warning("Your request is pending approval.")
-
                 else:
                     st.error("Your account is blocked.")
-
-        st.markdown("---")
 
         if st.button("Forgot Password?"):
             st.session_state.route = "forgot_password"
             st.rerun()
 
+    # ---------- SIGNUP ----------
     with tab2:
-        st.subheader("Request Access")
-
         email = st.text_input("Email", key="reg_email").strip().lower()
         username = st.text_input("Username", key="reg_user")
         password = st.text_input("Password", type="password", key="reg_pass")
 
         if st.button("Request Access"):
-            clean_email = email.strip().lower()
-            existing_emails = users["email"].dropna().astype(str).str.strip().str.lower().values
+            users = load_users()
+            existing_emails = users["email"].astype(str).str.strip().str.lower().values
 
-            if clean_email in existing_emails:
+            if email in existing_emails:
                 st.warning("Email already registered.")
+            elif email == "" or username == "" or password == "":
+                st.error("All fields are required.")
             else:
-                status = "approved" if is_gmail(clean_email) else "pending"
+                status = "approved" if is_gmail(email) else "pending"
 
                 new = pd.DataFrame(
-                    [[clean_email, username, password, status, "no", "no"]],
+                    [[email, username, password, status, "no", "no"]],
                     columns=["email", "username", "password", "status", "reset_requested", "force_change"]
                 )
 
@@ -192,11 +171,10 @@ def login_page():
                 if status == "approved":
                     st.success("Approved instantly! You can now login.")
                 else:
-                    st.info("Request submitted. Await approval.")
+                    st.info("Request submitted. Await admin approval.")
 
                 st.session_state.route = "login"
                 st.rerun()
-
 # ---------------- FORGOT PASSWORD PAGE ----------------
 def forgot_password_page():
     st.title("🔑 Forgot Password")
@@ -254,21 +232,6 @@ def force_change_password_page():
         st.session_state.route = "app"
         st.rerun()
 
-# ---------------- DEMO MODE ----------------
-def demo_mode():
-    st.session_state.demo = True
-    st.session_state.logged_in = True
-    st.session_state.username = "Demo User"
-    st.session_state.email = "demo@trackify.app"
-
-    if "demo_df" not in st.session_state:
-        st.session_state.demo_df = pd.DataFrame(
-            columns=["Username", "Date", "Time", "Task", "Productive"]
-        )
-
-    st.session_state.route = "app"
-    st.rerun()
-
 # ---------------- ADMIN PANEL ----------------
 def admin_panel():
     st.title("👑 Trackify Admin Panel")
@@ -285,12 +248,11 @@ def admin_panel():
     blocked = len(users[users["status"] == "blocked"])
     reset_requests = len(users[users["reset_requested"] == "yes"])
 
-    c1, c2, c3, c4, c5 = st.columns(5)
-    c1.metric("Total", total)
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Total Users", total)
     c2.metric("Approved", approved)
     c3.metric("Pending", pending)
-    c4.metric("Blocked", blocked)
-    c5.metric("Reset Requests", reset_requests)
+    c4.metric("Reset Requests", reset_requests)
 
     st.divider()
 
@@ -317,13 +279,27 @@ def admin_panel():
                 users.at[i, "force_change"] = "yes"
                 users.at[i, "reset_requested"] = "no"
                 save_users(users)
-                st.success("User must reset password on next login.")
+                st.success("User will be forced to reset password.")
                 st.rerun()
 
             if col4.button("Delete", key=f"delete_{i}"):
                 users = users.drop(i)
                 save_users(users)
                 st.rerun()
+# ---------------- DEMO MODE ----------------
+def demo_mode():
+    st.session_state.demo = True
+    st.session_state.logged_in = True
+    st.session_state.username = "Demo User"
+    st.session_state.email = "demo@trackify.app"
+
+    if "demo_df" not in st.session_state:
+        st.session_state.demo_df = pd.DataFrame(
+            columns=["Username", "Date", "Time", "Task", "Productive"]
+        )
+
+    st.session_state.route = "app"
+    st.rerun()
 
 # ---------------- APP SHELL ----------------
 def app_shell(df, demo=False):
@@ -363,11 +339,11 @@ def app_shell(df, demo=False):
 
     elif menu == "Insights":
         st.title("🔍 Insights")
-        st.write("Insights will appear here.")
+        st.write("Insights coming soon.")
 
-# ---------------- CORE TRACKER UI ----------------
+# ---------------- PLANNER ----------------
 def planner_view(df, demo=False):
-    st.subheader("🗓️ Daily Planner")
+    st.subheader("🗓️ Daily Planner (24 Hours)")
 
     col1, col2, col3 = st.columns(3)
 
@@ -383,6 +359,10 @@ def planner_view(df, demo=False):
     task = st.text_input("Task")
 
     if st.button("Add Task"):
+        if task.strip() == "":
+            st.error("Task cannot be empty.")
+            return
+
         new_row = {
             "Username": st.session_state.username,
             "Date": date.strftime("%Y-%m-%d"),
@@ -403,12 +383,16 @@ def planner_view(df, demo=False):
         st.success("Task added!")
         st.rerun()
 
+# ---------------- WEEKLY VIEW ----------------
 def weekly_view(df):
     st.subheader("📅 Weekly Summary")
 
     df_user = df[df["Username"] == st.session_state.username].copy()
-    df_user["Date"] = pd.to_datetime(df_user["Date"])
+    if df_user.empty:
+        st.info("No data yet.")
+        return
 
+    df_user["Date"] = pd.to_datetime(df_user["Date"])
     last_7 = datetime.now() - timedelta(days=7)
     week_df = df_user[df_user["Date"] >= last_7]
 
@@ -424,12 +408,16 @@ def weekly_view(df):
     )
     st.plotly_chart(fig, use_container_width=True)
 
+# ---------------- MONTHLY VIEW ----------------
 def monthly_view(df):
     st.subheader("🗓️ Monthly Summary")
 
     df_user = df[df["Username"] == st.session_state.username].copy()
-    df_user["Date"] = pd.to_datetime(df_user["Date"])
+    if df_user.empty:
+        st.info("No data yet.")
+        return
 
+    df_user["Date"] = pd.to_datetime(df_user["Date"])
     last_30 = datetime.now() - timedelta(days=30)
     month_df = df_user[df_user["Date"] >= last_30]
 
@@ -444,7 +432,6 @@ def monthly_view(df):
         title="Monthly Productivity"
     )
     st.plotly_chart(fig, use_container_width=True)
-
 # ---------------- ROUTER ----------------
 def router():
     r = st.session_state.route

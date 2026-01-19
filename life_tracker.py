@@ -28,11 +28,14 @@ def load_users():
     if os.path.exists(USERS_FILE):
         df = pd.read_csv(USERS_FILE)
 
+        # auto-upgrade schema
         if "reset_requested" not in df.columns:
             df["reset_requested"] = "no"
         if "force_change" not in df.columns:
             df["force_change"] = "no"
 
+        # normalize emails
+        df["email"] = df["email"].astype(str).str.strip().str.lower()
         return df
 
     return pd.DataFrame(columns=[
@@ -117,7 +120,6 @@ def landing_page():
     st.divider()
     st.caption("© Trackify — From Chaos to Clarity | Built by Naman Khandelwal")
 
-
 # ---------------- LOGIN PAGE ----------------
 def login_page():
     st.markdown("## 🔐 Trackify Access")
@@ -128,7 +130,7 @@ def login_page():
     with tab1:
         st.subheader("Login")
 
-        email = st.text_input("Email", key="login_email")
+        email = st.text_input("Email", key="login_email").strip().lower()
         password = st.text_input("Password", type="password", key="login_pass")
 
         if st.button("Login"):
@@ -166,49 +168,44 @@ def login_page():
     with tab2:
         st.subheader("Request Access")
 
-        email = st.text_input("Email", key="reg_email")
+        email = st.text_input("Email", key="reg_email").strip().lower()
         username = st.text_input("Username", key="reg_user")
         password = st.text_input("Password", type="password", key="reg_pass")
 
-if st.button("Request Access"):
-    clean_email = email.strip().lower()
+        if st.button("Request Access"):
+            clean_email = email.strip().lower()
+            existing_emails = users["email"].dropna().astype(str).str.strip().str.lower().values
 
-    existing_emails = users["email"].dropna().astype(str).str.strip().str.lower().values
+            if clean_email in existing_emails:
+                st.warning("Email already registered.")
+            else:
+                status = "approved" if is_gmail(clean_email) else "pending"
 
-    if clean_email in existing_emails:
-        st.warning("Email already registered.")
-    else:
-        status = "approved" if is_gmail(clean_email) else "pending"
+                new = pd.DataFrame(
+                    [[clean_email, username, password, status, "no", "no"]],
+                    columns=["email", "username", "password", "status", "reset_requested", "force_change"]
+                )
 
-        new = pd.DataFrame(
-            [[clean_email, username, password, status, "no", "no"]],
-            columns=["email", "username", "password", "status", "reset_requested", "force_change"]
-        )
+                users = pd.concat([users, new], ignore_index=True)
+                save_users(users)
 
-        users = pd.concat([users, new], ignore_index=True)
-        save_users(users)
+                if status == "approved":
+                    st.success("Approved instantly! You can now login.")
+                else:
+                    st.info("Request submitted. Await approval.")
 
-        if status == "approved":
-            st.success("Approved instantly! You can now login.")
-        else:
-            st.info("Request submitted. Await approval.")
-
-        st.session_state.route = "login"
-        st.rerun()
-
-
+                st.session_state.route = "login"
+                st.rerun()
 
 # ---------------- FORGOT PASSWORD PAGE ----------------
 def forgot_password_page():
     st.title("🔑 Forgot Password")
 
     users = load_users()
-    email = st.text_input("Enter your registered email")
+    email = st.text_input("Enter your registered email").strip().lower()
 
     if st.button("Request Reset"):
-        existing_emails = users["email"].dropna().astype(str).str.strip().str.lower().values
-       if email.strip().lower() in existing_emails:
-
+        if email not in users["email"].values:
             st.error("Email not found.")
         else:
             users.loc[users["email"] == email, "reset_requested"] = "yes"
@@ -221,7 +218,6 @@ def forgot_password_page():
     if st.button("Back to Login"):
         st.session_state.route = "login"
         st.rerun()
-
 
 # ---------------- FORCE PASSWORD CHANGE ----------------
 def force_change_password_page():
@@ -272,7 +268,6 @@ def demo_mode():
 
     st.session_state.route = "app"
     st.rerun()
-
 
 # ---------------- ADMIN PANEL ----------------
 def admin_panel():
@@ -330,7 +325,6 @@ def admin_panel():
                 save_users(users)
                 st.rerun()
 
-
 # ---------------- APP SHELL ----------------
 def app_shell(df, demo=False):
     st.sidebar.success(f"Logged in: {st.session_state.username}")
@@ -341,7 +335,6 @@ def app_shell(df, demo=False):
         st.session_state.route = "public"
         st.rerun()
 
-    # Admin Button
     if st.session_state.get("email") == ADMIN_EMAIL:
         if st.sidebar.button("👑 Admin Panel"):
             st.session_state.route = "admin"
@@ -373,7 +366,6 @@ def app_shell(df, demo=False):
         st.write("Insights will appear here.")
 
 # ---------------- CORE TRACKER UI ----------------
-
 def planner_view(df, demo=False):
     st.subheader("🗓️ Daily Planner")
 
@@ -411,7 +403,6 @@ def planner_view(df, demo=False):
         st.success("Task added!")
         st.rerun()
 
-
 def weekly_view(df):
     st.subheader("📅 Weekly Summary")
 
@@ -432,7 +423,6 @@ def weekly_view(df):
         title="Weekly Productivity"
     )
     st.plotly_chart(fig, use_container_width=True)
-
 
 def monthly_view(df):
     st.subheader("🗓️ Monthly Summary")
@@ -486,19 +476,17 @@ def router():
         admin_panel()
         st.stop()
 
-    # If user is not logged in, force login
     if not st.session_state.get("logged_in", False):
         st.session_state.route = "login"
         st.rerun()
 
-    # Load real app
-if st.session_state.get("demo", False):
-    df = st.session_state.demo_df
-else:
-    df = load_data()
+    if st.session_state.get("demo", False):
+        df = st.session_state.demo_df
+    else:
+        df = load_data()
 
-app_shell(df, demo=st.session_state.get("demo", False))    
-
+    app_shell(df, demo=st.session_state.get("demo", False))
+    st.stop()
 
 # ---------------- RUN APP ----------------
 router()

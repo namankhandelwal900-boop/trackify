@@ -26,16 +26,12 @@ def save_data(df):
 def clean_users_df(df):
     df = df.copy()
 
-    # Required columns
     required_cols = ["email", "username", "password", "status", "reset_requested", "force_change"]
     for col in required_cols:
         if col not in df.columns:
             df[col] = "no" if col in ["reset_requested", "force_change"] else ""
 
-    # Normalize email
     df["email"] = df["email"].astype(str).str.strip().str.lower()
-
-    # Remove empty email rows
     df = df[df["email"] != ""]
     df = df.drop_duplicates(subset=["email"], keep="first")
 
@@ -151,12 +147,16 @@ def login_page():
 
         if st.button("Request Access"):
             users = load_users()
+
+            normalized_input = email.strip().lower()
             existing_emails = users["email"].astype(str).str.strip().str.lower().values
 
-            if email in existing_emails:
+            if normalized_input in existing_emails:
                 st.warning("Email already registered.")
+
             elif email == "" or username == "" or password == "":
                 st.error("All fields are required.")
+
             else:
                 status = "approved" if is_gmail(email) else "pending"
 
@@ -171,7 +171,7 @@ def login_page():
                 if status == "approved":
                     st.success("Approved instantly! You can now login.")
                 else:
-                    st.info("Request submitted. Await admin approval.")
+                    st.info("Request submitted. Await approval.")
 
                 st.session_state.route = "login"
                 st.rerun()
@@ -196,6 +196,7 @@ def forgot_password_page():
     if st.button("Back to Login"):
         st.session_state.route = "login"
         st.rerun()
+
 
 # ---------------- FORCE PASSWORD CHANGE ----------------
 def force_change_password_page():
@@ -231,6 +232,7 @@ def force_change_password_page():
         st.success("Password updated successfully!")
         st.session_state.route = "app"
         st.rerun()
+
 
 # ---------------- ADMIN PANEL ----------------
 def admin_panel():
@@ -286,6 +288,8 @@ def admin_panel():
                 users = users.drop(i)
                 save_users(users)
                 st.rerun()
+
+
 # ---------------- DEMO MODE ----------------
 def demo_mode():
     st.session_state.demo = True
@@ -300,6 +304,7 @@ def demo_mode():
 
     st.session_state.route = "app"
     st.rerun()
+
 
 # ---------------- APP SHELL ----------------
 def app_shell(df, demo=False):
@@ -340,6 +345,7 @@ def app_shell(df, demo=False):
     elif menu == "Insights":
         st.title("🔍 Insights")
         st.write("Insights coming soon.")
+
 
 # ---------------- PLANNER ----------------
 def planner_view(df, demo=False):
@@ -383,6 +389,7 @@ def planner_view(df, demo=False):
         st.success("Task added!")
         st.rerun()
 
+
 # ---------------- WEEKLY VIEW ----------------
 def weekly_view(df):
     st.subheader("📅 Weekly Summary")
@@ -407,6 +414,7 @@ def weekly_view(df):
         title="Weekly Productivity"
     )
     st.plotly_chart(fig, use_container_width=True)
+
 
 # ---------------- MONTHLY VIEW ----------------
 def monthly_view(df):
@@ -474,6 +482,7 @@ def router():
 
     app_shell(df, demo=st.session_state.get("demo", False))
     st.stop()
+
 
 # ---------------- RUN APP ----------------
 router()

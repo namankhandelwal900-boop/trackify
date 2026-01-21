@@ -163,7 +163,7 @@ def login_page():
         st.error("All fields are required.")
 
     elif email_clean in existing_emails:
-        st.warning("Email already registered.")
+        st.warning("Email registered.")
 
     else:
         status = "approved"  # Instant access (Type B)
@@ -491,3 +491,4 @@ def router():
 
 # ---------------- RUN APP ----------------
 router()
+

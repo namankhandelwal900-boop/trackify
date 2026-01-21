@@ -39,16 +39,23 @@ def clean_users_df(df):
 
 def load_users():
     if os.path.exists(USERS_FILE):
-        try:
-            df = pd.read_csv(USERS_FILE)
-        except:
-            df = pd.DataFrame(columns=["email", "username", "password", "status", "reset_requested", "force_change"])
-    else:
-        df = pd.DataFrame(columns=["email", "username", "password", "status", "reset_requested", "force_change"])
+        df = pd.read_csv(USERS_FILE, dtype=str).fillna("")
 
-    df = clean_users_df(df)
-    save_users(df)
-    return df
+        # Normalize emails
+        df["email"] = df["email"].str.strip().str.lower()
+
+        # Auto-add missing columns
+        for col in ["reset_requested", "force_change"]:
+            if col not in df.columns:
+                df[col] = "no"
+
+        return df
+
+    return pd.DataFrame(columns=[
+        "email", "username", "password",
+        "status", "reset_requested", "force_change"
+    ])
+
 
 def save_users(df):
     df.to_csv(USERS_FILE, index=False)
@@ -146,35 +153,33 @@ def login_page():
         password = st.text_input("Password", type="password", key="reg_pass")
 
         if st.button("Request Access"):
-            users = load_users()
+         users = load_users()
 
-            normalized_input = email.strip().lower()
-            existing_emails = users["email"].astype(str).str.strip().str.lower().values
+    email_clean = email.strip().lower()
 
-            if normalized_input in existing_emails:
-                st.warning("Email already registered.")
+    existing_emails = users["email"].astype(str).str.strip().str.lower().tolist()
 
-            elif email == "" or username == "" or password == "":
-                st.error("All fields are required.")
+    if email_clean == "" or username == "" or password == "":
+        st.error("All fields are required.")
 
-            else:
-                status = "approved" if is_gmail(email) else "pending"
+    elif email_clean in existing_emails:
+        st.warning("Email already registered.")
 
-                new = pd.DataFrame(
-                    [[email, username, password, status, "no", "no"]],
-                    columns=["email", "username", "password", "status", "reset_requested", "force_change"]
-                )
+    else:
+        status = "approved"  # Instant access (Type B)
 
-                users = pd.concat([users, new], ignore_index=True)
-                save_users(users)
+        new = pd.DataFrame(
+            [[email_clean, username, password, status, "no", "no"]],
+            columns=["email", "username", "password", "status", "reset_requested", "force_change"]
+        )
 
-                if status == "approved":
-                    st.success("Approved instantly! You can now login.")
-                else:
-                    st.info("Request submitted. Await approval.")
+        users = pd.concat([users, new], ignore_index=True)
+        save_users(users)
 
-                st.session_state.route = "login"
-                st.rerun()
+        st.success("Account created! You can now login.")
+        st.session_state.route = "login"
+        st.rerun()
+
 # ---------------- FORGOT PASSWORD PAGE ----------------
 def forgot_password_page():
     st.title("🔑 Forgot Password")
